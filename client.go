@@ -1,6 +1,8 @@
 package main
 
-import "golang.org/x/net/websocket"
+import (
+	"golang.org/x/net/websocket"
+)
 
 type client struct {
 	socket *websocket.Conn
@@ -22,7 +24,7 @@ func (c *client) read() {
 
 func (c *client) write() {
 	for msg := range c.send {
-		if err := websocket.Message.Send(c.socket, msg); err != nil {
+		if err := websocket.Message.Send(c.socket, string(msg)); err != nil {
 			break
 		}
 	}
