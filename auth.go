@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +11,8 @@ import (
 	"strings"
 
 	"golang.org/x/oauth2"
+	oauth2api "google.golang.org/api/oauth2/v2"
+	"google.golang.org/api/option"
 )
 
 type authHandler struct {
@@ -58,6 +62,36 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		loginURL := googleConf.AuthCodeURL("state", oauth2.AccessTypeOffline)
 		http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
+	case "callback":
+		if provider != "google" {
+			http.Error(w, fmt.Sprintf("Unsupported provider: %s", provider), http.StatusBadRequest)
+			return
+		}
+		code := r.FormValue("code")
+		ctx := context.Background()
+		token, err := googleConf.Exchange(ctx, code)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Code exchange failed: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+		client := googleConf.Client(ctx, token)
+		oauth2Service, err := oauth2api.NewService(ctx, option.WithHTTPClient(client))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to create a new oauth2 service: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+		userInfo, err := oauth2Service.Userinfo.Get().Do()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get user info: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+		// set cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:  "auth",
+			Value: base64.StdEncoding.EncodeToString([]byte(userInfo.Name)),
+			Path:  "/",
+		})
+		http.Redirect(w, r, "/chat", http.StatusTemporaryRedirect)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Auth action %s not supported", action)
