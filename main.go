@@ -33,6 +33,7 @@ func main() {
 	r := newRoom()
 	r.tracer = trace.New(os.Stdout)
 	http.Handle("/", MustAuth(&templateHandler{filename: "chat.html"}))
+	http.Handle("/login", &templateHandler{filename: "login.html"})
 	http.Handle("/room", r)
 	go r.run()
 	// Start the web server
