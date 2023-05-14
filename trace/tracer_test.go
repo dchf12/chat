@@ -7,8 +7,18 @@ import (
 
 func TestNew(t *testing.T) {
 	var buf bytes.Buffer
-	tracer := New(&buf)
-	if tracer == nil {
+	var tracer Tracer
+	if tracer.out != nil {
+		t.Error("Return from New should be nil")
+	} else {
+		tracer.Trace("Hello, trace package.")
+		if buf.String() != "" {
+			t.Error("Trace should not write blank.")
+		}
+	}
+
+	tracer = New(&buf)
+	if tracer.out == nil {
 		t.Error("Return from New should not be nil")
 	} else {
 		tracer.Trace("Hello, trace package.")
@@ -16,9 +26,4 @@ func TestNew(t *testing.T) {
 			t.Errorf("Trace should not write '%s'.", buf.String())
 		}
 	}
-}
-
-func TestOff(t *testing.T) {
-	silentTracer := Off()
-	silentTracer.Trace("Data")
 }
