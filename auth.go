@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/stretchr/objx"
 	"golang.org/x/oauth2"
 	oauth2api "google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
@@ -85,10 +85,13 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Failed to get user info: %s", err.Error()), http.StatusBadRequest)
 			return
 		}
+		authCookieValue := objx.New(map[string]interface{}{
+			"name": userInfo.Name,
+		}).MustBase64()
 		// set cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:  "auth",
-			Value: base64.StdEncoding.EncodeToString([]byte(userInfo.Name)),
+			Value: authCookieValue,
 			Path:  "/",
 		})
 		http.Redirect(w, r, "/chat", http.StatusTemporaryRedirect)

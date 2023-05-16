@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/dchf12/chat/trace"
+	"github.com/stretchr/objx"
 )
 
 type templateHandler struct {
@@ -22,7 +23,14 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.once.Do(func() {
 		t.templ = template.Must(template.ParseFiles(filepath.Join("templates", t.filename)))
 	})
-	if err := t.templ.Execute(w, r); err != nil {
+	data := map[string]any{
+		"Host": r.Host,
+	}
+	if authCookie, err := r.Cookie("auth"); err == nil {
+		data["UserData"] = objx.MustFromBase64(authCookie.Value)
+	}
+
+	if err := t.templ.Execute(w, data); err != nil {
 		log.Fatal("templateHandler ServeHTTP", err)
 	}
 }
