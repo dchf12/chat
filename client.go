@@ -1,32 +1,40 @@
 package main
 
 import (
+	"log"
+	"time"
+
 	"golang.org/x/net/websocket"
 )
 
 type client struct {
-	socket *websocket.Conn
-	send   chan []byte
-	room   *room
+	socket   *websocket.Conn
+	send     chan *message
+	room     *room
+	userData map[string]any
 }
 
 func (c *client) read() {
+	defer c.socket.Close()
 	for {
-		var msg []byte
-		if err := websocket.Message.Receive(c.socket, &msg); err == nil {
+		var msg *message
+		if err := websocket.JSON.Receive(c.socket, &msg); err == nil {
+			msg.When = time.Now()
+			msg.Name = c.userData["name"].(string)
 			c.room.forward <- msg
 		} else {
+			log.Printf("websocket.JSON.Receive error: %v", err)
 			break
 		}
 	}
-	c.socket.Close()
 }
 
 func (c *client) write() {
+	defer c.socket.Close()
 	for msg := range c.send {
-		if err := websocket.Message.Send(c.socket, string(msg)); err != nil {
+		if err := websocket.JSON.Send(c.socket, msg); err != nil {
+			log.Printf("websocket.JSON.Send error: %v", err)
 			break
 		}
 	}
-	c.socket.Close()
 }

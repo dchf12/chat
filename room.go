@@ -4,11 +4,12 @@ import (
 	"net/http"
 
 	"github.com/dchf12/chat/trace"
+	"github.com/stretchr/objx"
 	"golang.org/x/net/websocket"
 )
 
 type room struct {
-	forward chan []byte
+	forward chan *message
 	join    chan *client
 	leave   chan *client
 	clients map[*client]bool
@@ -17,7 +18,7 @@ type room struct {
 
 func newRoom() *room {
 	return &room{
-		forward: make(chan []byte),
+		forward: make(chan *message),
 		join:    make(chan *client),
 		leave:   make(chan *client),
 		clients: make(map[*client]bool),
@@ -35,7 +36,7 @@ func (r *room) run() {
 			close(client.send)
 			r.tracer.Trace("クライアントが退出しました")
 		case msg := <-r.forward:
-			r.tracer.Trace("メッセージを受信しました: ", string(msg))
+			r.tracer.Trace("メッセージを受信しました: ", msg.Message)
 			for client := range r.clients {
 				select {
 				case client.send <- msg:
@@ -52,10 +53,16 @@ func (r *room) run() {
 
 func (r *room) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	websocket.Handler(func(ws *websocket.Conn) {
+		authCookie, err := req.Cookie("auth")
+		if err != nil {
+			http.Error(w, "Cookieの取得に失敗しました", http.StatusForbidden)
+			return
+		}
 		client := &client{
-			socket: ws,
-			send:   make(chan []byte, 256),
-			room:   r,
+			socket:   ws,
+			send:     make(chan *message, 256),
+			room:     r,
+			userData: objx.MustFromBase64(authCookie.Value),
 		}
 		r.join <- client
 		defer func() { r.leave <- client }()
