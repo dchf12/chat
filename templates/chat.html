@@ -2,27 +2,40 @@
 <html>
   <head>
     <title>Chat</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.16/dist/tailwind.min.css" rel="stylesheet">
     <style>
-      input { display: block; }
-      ul { list-style: none; }
+      ul#messages { list-style: none; }
+      ul#messages li { padding: 5px 10px; }
+      ul#messages li { margin-bottom: 2px; }
     </style>
   </head>
   <body>
-    <ul id="messages"></ul>
-    WebSocketを使用したチャット
-    <form id="chatbox">
-      {{.UserData.name}}:<br />
-      <textarea></textarea>
-      <input type="submit" value="送信" />
-      または<a href="/logout">ログアウト</a>
-    </form>
+    <div class="container">
+      <form id="chatbox" class="form-inline">
+        <div class="rounded-md p-4">
+          <div class="form-group">
+            <label for="message">{{.UserData.name}}からメッセージを送信</label>
+            または<a href="/logout" class="text-blue-500 hover:text-blue-800 underline">ログアウト</a>
+          </div>
+          <div class="flex items-center">
+            <textarea id="message" class="form-control flex-grow p-2 border border-gray-300 rounded-md" rows="3"></textarea>
+            <input type="submit" value="送信" class="btn btn-primary ml-2">
+          </div>
+        </div>
+      </form>
+      <div class="flex justify-between items-center py-4">
+        <div class="flex items-center">
+          <ul id="messages"></ul>
+        </div>
+      </div>
+    </div>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js">
     </script>
     <script>
       $(function(){
-        var socket = null;
-        var msgBox = $("#chatbox textarea");
-        var messages = $("#messages");
+        let socket = null;
+        let msgBox = $("#chatbox textarea");
+        let messages = $("#messages");
         $("#chatbox").submit(function(){
           if (!msgBox.val()) return false;
           if (!socket) {
@@ -44,12 +57,12 @@
             const msg = JSON.parse(e.data);
             messages.append(
               $("<li>").append(
-                $("<img>").css({
+                $("<img>").attr("title", msg.Name).css({
                   width: 50,
                   height: 50,
-                  verticalAlign: "middle"
+                  verticalAlign: "middle",
+                  borderRadius: "50%",
                 }).attr("src", msg.AvatarURL),
-                $("<strong>").text(msg.Name + ": "),
                 $("<span>").text(msg.Message + " "),
                 $("<span>").text(new Date(msg.When).toLocaleString() + " ")
               ));
