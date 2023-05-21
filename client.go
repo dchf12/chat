@@ -21,8 +21,9 @@ func (c *client) read() {
 		if err := websocket.JSON.Receive(c.socket, &msg); err == nil {
 			msg.When = time.Now()
 			msg.Name = c.userData["name"].(string)
-			if avatarURL, ok := c.userData["avatar_url"]; ok {
-				msg.AvatarURL = avatarURL.(string)
+			msg.AvatarURL, err = c.room.avatar.AvatarURL(c)
+			if err != nil {
+				log.Fatalln("AvatarURLの取得に失敗しました:", err)
 			}
 			c.room.forward <- msg
 		} else {
