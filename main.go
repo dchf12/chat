@@ -52,6 +52,7 @@ func main() {
 		})
 		http.Redirect(w, r, "/chat", http.StatusTemporaryRedirect)
 	})
+	http.HandleFunc("/uploader", uploaderHandler)
 	http.Handle("/upload", &templateHandler{filename: "upload.html"})
 	http.Handle("/room", r)
 	go r.run()
