@@ -32,16 +32,16 @@ func TestAuthAvatar(t *testing.T) {
 func TestGravatarAvatar(t *testing.T) {
 	var gravatarAvatar GravatarAvatar
 	client := new(client)
+	m := md5.New()
+	io.WriteString(m, strings.ToLower("mail@example.com"))
 	client.userData = map[string]interface{}{
-		"email": "email@example.com",
+		"userid": fmt.Sprintf("%x", m.Sum(nil)),
 	}
 	url, err := gravatarAvatar.AvatarURL(client)
 	if err != nil {
 		t.Error("GravatarAvatar.AvatarURLはエラーを返すべきではありません")
 	}
-	m := md5.New()
-	io.WriteString(m, strings.ToLower(client.userData["email"].(string)))
-	if url != "//www.gravatar.com/avatar/"+fmt.Sprintf("%x", m.Sum(nil)) {
+	if url != "//www.gravatar.com/avatar/"+fmt.Sprintf("%x", client.userData["userid"]) {
 		t.Errorf("GravatarAvatar.AvatarURLが%sという誤った値を返しました", url)
 	}
 }
