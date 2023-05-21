@@ -20,7 +20,8 @@ type authHandler struct {
 }
 
 func (h *authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if _, err := r.Cookie("auth"); err == http.ErrNoCookie {
+	// Cookieがない、または空の場合はログイン画面にリダイレクト
+	if cookie, err := r.Cookie("auth"); err == http.ErrNoCookie || cookie.Value == "" {
 		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
 	} else if err != nil {
 		panic(err)
