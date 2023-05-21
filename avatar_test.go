@@ -4,6 +4,9 @@ import (
 	"crypto/md5"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -43,5 +46,22 @@ func TestGravatarAvatar(t *testing.T) {
 	}
 	if url != "//www.gravatar.com/avatar/"+fmt.Sprintf("%x", client.userData["userid"]) {
 		t.Errorf("GravatarAvatar.AvatarURLが%sという誤った値を返しました", url)
+	}
+}
+
+func TestFileSystemAvatar(t *testing.T) {
+	filename := filepath.Join("avatars", "abc.jpg")
+	ioutil.WriteFile(filename, []byte{}, 0600)
+	defer func() { os.Remove(filename) }()
+
+	var fileSystemAvatar FileSystemAvatar
+	client := new(client)
+	client.userData = map[string]interface{}{"userid": "abc"}
+	url, err := fileSystemAvatar.AvatarURL(client)
+	if err != nil {
+		t.Error("FileSystemAvatar.AvatarURLはエラーを返すべきではありません")
+	}
+	if url != "/avatars/abc.jpg" {
+		t.Errorf("FileSystemAvatar.AvatarURLが%sという誤った値を返しました", url)
 	}
 }

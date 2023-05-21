@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 )
 
 var ErrNoAvatarURL = errors.New("chat: アバターのURLを取得できません。")
@@ -38,4 +39,24 @@ func (_ GravatarAvatar) AvatarURL(c *client) (string, error) {
 		}
 	}
 	return "", ErrNoAvatarURL
+}
+
+type FileSystemAvatar struct{}
+
+var UseFileSystemAvatar FileSystemAvatar
+
+func (_ FileSystemAvatar) AvatarURL(c *client) (string, error) {
+	userid, ok := c.userData["userid"]
+	if !ok {
+		return "", ErrNoAvatarURL
+	}
+	useridStr, ok := userid.(string)
+	if !ok {
+		return "", ErrNoAvatarURL
+	}
+	matches, err := filepath.Glob(filepath.Join("avatars", useridStr+"*"))
+	if err != nil || len(matches) == 0 {
+		return "", ErrNoAvatarURL
+	}
+	return "/" + matches[0], nil
 }
