@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/stretchr/objx"
@@ -89,7 +89,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m := md5.New()
-		io.WriteString(m, strings.ToLower(userInfo.Email))
+		_, _ = io.WriteString(m, strings.ToLower(userInfo.Email))
 		userID := fmt.Sprintf("%x", m.Sum(nil))
 		authCookieValue := objx.New(map[string]interface{}{
 			"userid":     userID,
@@ -121,7 +121,7 @@ type Credentials struct {
 }
 
 func loadCredentials() Credentials {
-	credsFile, err := ioutil.ReadFile("secret.json")
+	credsFile, err := os.ReadFile("secret.json")
 	if err != nil {
 		log.Fatalf("Error reading credentials file: %v", err)
 	}

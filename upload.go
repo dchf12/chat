@@ -2,8 +2,8 @@ package main
 
 import (
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
 )
 
@@ -11,19 +11,19 @@ func uploaderHandler(w http.ResponseWriter, req *http.Request) {
 	userID := req.FormValue("userid")
 	file, header, err := req.FormFile("avatarFile")
 	if err != nil {
-		io.WriteString(w, err.Error())
+		_, _ = io.WriteString(w, err.Error())
 		return
 	}
 	defer file.Close()
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
-		io.WriteString(w, err.Error())
+		_, _ = io.WriteString(w, err.Error())
 		return
 	}
 	filename := filepath.Join("avatars", userID+filepath.Ext(header.Filename))
-	if err := ioutil.WriteFile(filename, data, 0600); err != nil {
-		io.WriteString(w, err.Error())
+	if err := os.WriteFile(filename, data, 0600); err != nil {
+		_, _ = io.WriteString(w, err.Error())
 		return
 	}
-	io.WriteString(w, "Successful")
+	_, _ = io.WriteString(w, "Successful")
 }

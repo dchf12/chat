@@ -19,7 +19,7 @@ type AuthAvatar struct{}
 
 var UseAuthAvatar AuthAvatar
 
-func (_ AuthAvatar) AvatarURL(c *client) (string, error) {
+func (AuthAvatar) AvatarURL(c *client) (string, error) {
 	if url, ok := c.userData["avatar_url"]; ok {
 		if urlStr, ok := url.(string); ok {
 			return urlStr, nil
@@ -32,7 +32,7 @@ type GravatarAvatar struct{}
 
 var UseGravatar GravatarAvatar
 
-func (_ GravatarAvatar) AvatarURL(c *client) (string, error) {
+func (GravatarAvatar) AvatarURL(c *client) (string, error) {
 	if userid, ok := c.userData["userid"]; ok {
 		if useridStr, ok := userid.(string); ok {
 			return fmt.Sprintf("//www.gravatar.com/avatar/%x", useridStr), nil
@@ -45,7 +45,7 @@ type FileSystemAvatar struct{}
 
 var UseFileSystemAvatar FileSystemAvatar
 
-func (_ FileSystemAvatar) AvatarURL(c *client) (string, error) {
+func (FileSystemAvatar) AvatarURL(c *client) (string, error) {
 	userid, ok := c.userData["userid"]
 	if !ok {
 		return "", ErrNoAvatarURL
