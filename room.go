@@ -12,7 +12,7 @@ type room struct {
 	forward chan *message
 	join    chan *client
 	leave   chan *client
-	clients map[*client]bool
+	clients map[*client]struct{}
 	tracer  trace.Tracer
 	avatar  Avatar
 }
@@ -22,7 +22,7 @@ func newRoom(avatar Avatar) *room {
 		forward: make(chan *message),
 		join:    make(chan *client),
 		leave:   make(chan *client),
-		clients: make(map[*client]bool),
+		clients: make(map[*client]struct{}),
 		avatar:  avatar,
 	}
 }
@@ -31,7 +31,7 @@ func (r *room) run() {
 	for {
 		select {
 		case client := <-r.join:
-			r.clients[client] = true
+			r.clients[client] = struct{}{}
 			r.tracer.Trace("新規クライアントが参加しました")
 		case client := <-r.leave:
 			delete(r.clients, client)

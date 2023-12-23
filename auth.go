@@ -17,23 +17,20 @@ import (
 	"google.golang.org/api/option"
 )
 
-type authHandler struct {
-	next http.Handler
-}
-
-func (h *authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Cookieがない、または空の場合はログイン画面にリダイレクト
-	if cookie, err := r.Cookie("auth"); err == http.ErrNoCookie || cookie.Value == "" {
-		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
-	} else if err != nil {
-		panic(err)
-	} else {
-		h.next.ServeHTTP(w, r)
-	}
-}
-
-func MustAuth(handler http.Handler) http.Handler {
-	return &authHandler{next: handler}
+func WithAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cookieがない、または空の場合はログイン画面にリダイレクト
+		cookie, err := r.Cookie("auth")
+		if err == http.ErrNoCookie || cookie.Value == "" {
+			http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // パスの形式 /auth/{action}/{provider}
@@ -91,7 +88,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		m := md5.New()
 		_, _ = io.WriteString(m, strings.ToLower(userInfo.Email))
 		userID := fmt.Sprintf("%x", m.Sum(nil))
-		authCookieValue := objx.New(map[string]interface{}{
+		authCookieValue := objx.New(map[string]any{
 			"userid":     userID,
 			"name":       userInfo.Name,
 			"avatar_url": userInfo.Picture,
