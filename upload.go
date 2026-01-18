@@ -5,25 +5,35 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/labstack/echo/v4"
 )
 
-func uploaderHandler(w http.ResponseWriter, req *http.Request) {
-	userID := req.FormValue("userid")
-	file, header, err := req.FormFile("avatarFile")
+func uploaderHandler(c echo.Context) error {
+	file, err := c.FormFile("avatarFile")
 	if err != nil {
-		_, _ = io.WriteString(w, err.Error())
-		return
+		return c.String(http.StatusBadRequest, err.Error())
 	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
+
+	src, err := file.Open()
 	if err != nil {
-		_, _ = io.WriteString(w, err.Error())
-		return
+		return c.String(http.StatusInternalServerError, err.Error())
 	}
-	filename := filepath.Join("avatars", userID+filepath.Ext(header.Filename))
+	defer func() { _ = src.Close() }()
+
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return c.String(http.StatusInternalServerError, err.Error())
+	}
+
+	userID := filepath.Base(c.FormValue("userid"))
+	if userID == "" || userID == "." || userID == ".." {
+		return c.String(http.StatusBadRequest, "invalid userid")
+	}
+	filename := filepath.Join("avatars", userID+filepath.Ext(file.Filename))
 	if err := os.WriteFile(filename, data, 0600); err != nil {
-		_, _ = io.WriteString(w, err.Error())
-		return
+		return c.String(http.StatusInternalServerError, err.Error())
 	}
-	_, _ = io.WriteString(w, "Successful")
+
+	return c.String(http.StatusOK, "Successful")
 }
