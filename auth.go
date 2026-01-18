@@ -11,100 +11,106 @@ import (
 	"os"
 	"strings"
 
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/objx"
 	"golang.org/x/oauth2"
 	oauth2api "google.golang.org/api/oauth2/v2"
 	"google.golang.org/api/option"
 )
 
-func WithAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Cookieがない、または空の場合はログイン画面にリダイレクト
-		cookie, err := r.Cookie("auth")
-		if err == http.ErrNoCookie || cookie.Value == "" {
-			http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
-			return
-		}
-		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
+var (
+	credentials Credentials
+	googleConf  *oauth2.Config
+)
 
-// パスの形式 /auth/{action}/{provider}
-func loginHandler(w http.ResponseWriter, r *http.Request) {
-	segs := strings.Split(r.URL.Path, "/")
-	action := segs[2]
-	provider := segs[3]
-
-	creds := loadCredentials()
-	googleConf := &oauth2.Config{
-		ClientID:     creds.Web.ClientID,
-		ClientSecret: creds.Web.ClientSecret,
-		RedirectURL:  creds.Web.RedirectURL[0],
+func init() {
+	var err error
+	credentials, err = loadCredentials()
+	if err != nil {
+		log.Fatalf("Failed to load credentials: %v", err)
+	}
+	googleConf = &oauth2.Config{
+		ClientID:     credentials.Web.ClientID,
+		ClientSecret: credentials.Web.ClientSecret,
+		RedirectURL:  credentials.Web.RedirectURL[0],
 		Scopes: []string{
 			"https://www.googleapis.com/auth/userinfo.email",
 			"https://www.googleapis.com/auth/userinfo.profile",
 		},
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  creds.Web.AuthURL,
-			TokenURL: creds.Web.TokenURL,
+			AuthURL:  credentials.Web.AuthURL,
+			TokenURL: credentials.Web.TokenURL,
 		},
 	}
+}
 
-	switch action {
-	case "login":
-		if provider != "google" {
-			http.Error(w, fmt.Sprintf("Unsupported provider: %s", provider), http.StatusBadRequest)
-			return
+func AuthMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			cookie, err := c.Cookie("auth")
+			if err != nil || cookie.Value == "" {
+				return c.Redirect(http.StatusTemporaryRedirect, "/login")
+			}
+			return next(c)
 		}
-		loginURL := googleConf.AuthCodeURL("state", oauth2.AccessTypeOffline)
-		http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
-	case "callback":
-		if provider != "google" {
-			http.Error(w, fmt.Sprintf("Unsupported provider: %s", provider), http.StatusBadRequest)
-			return
-		}
-		code := r.FormValue("code")
-		ctx := context.Background()
-		token, err := googleConf.Exchange(ctx, code)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Code exchange failed: %s", err.Error()), http.StatusBadRequest)
-			return
-		}
-		client := googleConf.Client(ctx, token)
-		oauth2Service, err := oauth2api.NewService(ctx, option.WithHTTPClient(client))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to create a new oauth2 service: %s", err.Error()), http.StatusBadRequest)
-			return
-		}
-		userInfo, err := oauth2Service.Userinfo.Get().Do()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get user info: %s", err.Error()), http.StatusBadRequest)
-			return
-		}
-		m := md5.New()
-		_, _ = io.WriteString(m, strings.ToLower(userInfo.Email))
-		userID := fmt.Sprintf("%x", m.Sum(nil))
-		authCookieValue := objx.New(map[string]any{
-			"userid":     userID,
-			"name":       userInfo.Name,
-			"avatar_url": userInfo.Picture,
-			"email":      userInfo.Email,
-		}).MustBase64()
-		// set cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:  "auth",
-			Value: authCookieValue,
-			Path:  "/",
-		})
-		http.Redirect(w, r, "/chat", http.StatusTemporaryRedirect)
-	default:
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "Auth action %s not supported", action)
 	}
+}
+
+func loginHandler(c echo.Context) error {
+	switch action := c.Param("action"); action {
+	case "login":
+		return handleLogin(c)
+	case "callback":
+		return handleCallback(c)
+	default:
+		return c.String(http.StatusNotFound, fmt.Sprintf("Auth action %s not supported", action))
+	}
+}
+
+func handleLogin(c echo.Context) error {
+	provider := c.Param("provider")
+	if provider != "google" {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("Unsupported provider: %s", provider))
+	}
+	loginURL := googleConf.AuthCodeURL("state", oauth2.AccessTypeOffline)
+	return c.Redirect(http.StatusTemporaryRedirect, loginURL)
+}
+
+func handleCallback(c echo.Context) error {
+	provider := c.Param("provider")
+	if provider != "google" {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("Unsupported provider: %s", provider))
+	}
+	code := c.QueryParam("code")
+	ctx := context.Background()
+	token, err := googleConf.Exchange(ctx, code)
+	if err != nil {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("Code exchange failed: %s", err.Error()))
+	}
+	client := googleConf.Client(ctx, token)
+	oauth2Service, err := oauth2api.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("Failed to create a new oauth2 service: %s", err.Error()))
+	}
+	userInfo, err := oauth2Service.Userinfo.Get().Do()
+	if err != nil {
+		return c.String(http.StatusBadRequest, fmt.Sprintf("Failed to get user info: %s", err.Error()))
+	}
+	m := md5.New()
+	_, _ = io.WriteString(m, strings.ToLower(userInfo.Email))
+	userID := fmt.Sprintf("%x", m.Sum(nil))
+	authCookieValue := objx.New(map[string]any{
+		"userid":     userID,
+		"name":       userInfo.Name,
+		"avatar_url": userInfo.Picture,
+		"email":      userInfo.Email,
+	}).MustBase64()
+	c.SetCookie(&http.Cookie{
+		Name:  "auth",
+		Value: authCookieValue,
+		Path:  "/",
+	})
+	return c.Redirect(http.StatusTemporaryRedirect, "/")
 }
 
 type Credentials struct {
@@ -117,14 +123,14 @@ type Credentials struct {
 	} `json:"web"`
 }
 
-func loadCredentials() Credentials {
+func loadCredentials() (Credentials, error) {
 	credsFile, err := os.ReadFile("secret.json")
 	if err != nil {
-		log.Fatalf("Error reading credentials file: %v", err)
+		return Credentials{}, fmt.Errorf("error reading credentials file: %v", err)
 	}
 	var creds Credentials
 	if err := json.Unmarshal(credsFile, &creds); err != nil {
-		log.Fatalf("Error unmarshalling credentials: %v", err)
+		return Credentials{}, fmt.Errorf("error unmarshalling credentials: %v", err)
 	}
-	return creds
+	return creds, nil
 }

@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
 
 type client struct {
@@ -15,29 +15,37 @@ type client struct {
 }
 
 func (c *client) read() {
-	defer c.socket.Close()
+	defer func() { _ = c.socket.Close() }()
 	for {
 		var msg *message
-		if err := websocket.JSON.Receive(c.socket, &msg); err == nil {
+		if err := c.socket.ReadJSON(&msg); err == nil {
 			msg.When = time.Now()
-			msg.Name = c.userData["name"].(string)
+			name, ok := c.userData["name"].(string)
+			if !ok {
+				log.Printf("invalid userData: name is missing or not a string")
+				break
+			}
+			msg.Name = name
+
+			var err error
 			msg.AvatarURL, err = c.room.avatar.AvatarURL(c)
 			if err != nil {
 				log.Fatalln("AvatarURLの取得に失敗しました:", err)
+				continue
 			}
 			c.room.forward <- msg
 		} else {
-			log.Printf("websocket.JSON.Receive error: %v", err)
+			log.Printf("websocket read error: %v", err)
 			break
 		}
 	}
 }
 
 func (c *client) write() {
-	defer c.socket.Close()
+	defer func() { _ = c.socket.Close() }()
 	for msg := range c.send {
-		if err := websocket.JSON.Send(c.socket, msg); err != nil {
-			log.Printf("websocket.JSON.Send error: %v", err)
+		if err := c.socket.WriteJSON(msg); err != nil {
+			log.Printf("websocket write error: %v", err)
 			break
 		}
 	}

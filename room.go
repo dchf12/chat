@@ -4,9 +4,18 @@ import (
 	"net/http"
 
 	"github.com/dchf12/chat/trace"
+	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/objx"
-	"golang.org/x/net/websocket"
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 type room struct {
 	forward chan *message
@@ -15,6 +24,7 @@ type room struct {
 	clients map[*client]struct{}
 	tracer  trace.Tracer
 	avatar  Avatar
+	done    chan struct{}
 }
 
 func newRoom(avatar Avatar) *room {
@@ -30,6 +40,8 @@ func newRoom(avatar Avatar) *room {
 func (r *room) run() {
 	for {
 		select {
+		case <-r.done:
+			return
 		case client := <-r.join:
 			r.clients[client] = struct{}{}
 			r.tracer.Trace("新規クライアントが参加しました")
@@ -53,22 +65,32 @@ func (r *room) run() {
 	}
 }
 
-func (r *room) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	websocket.Handler(func(ws *websocket.Conn) {
-		authCookie, err := req.Cookie("auth")
-		if err != nil {
-			http.Error(w, "Cookieの取得に失敗しました", http.StatusForbidden)
-			return
-		}
-		client := &client{
-			socket:   ws,
-			send:     make(chan *message, 256),
-			room:     r,
-			userData: objx.MustFromBase64(authCookie.Value),
-		}
-		r.join <- client
-		defer func() { r.leave <- client }()
-		go client.write()
-		client.read()
-	}).ServeHTTP(w, req)
+func (r *room) Stop() {
+	close(r.done)
+}
+
+func (r *room) WebSocketHandler(c echo.Context) error {
+	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		return err
+	}
+
+	authCookie, err := c.Cookie("auth")
+	if err != nil {
+		_ = ws.Close()
+		return c.String(http.StatusForbidden, "Cookieの取得に失敗しました")
+	}
+
+	client := &client{
+		socket:   ws,
+		send:     make(chan *message, 256),
+		room:     r,
+		userData: objx.MustFromBase64(authCookie.Value),
+	}
+	r.join <- client
+	defer func() { r.leave <- client }()
+	go client.write()
+	client.read()
+
+	return nil
 }
