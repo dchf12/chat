@@ -1,21 +1,59 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
   <head>
-    <title>アップロード</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.16/dist/tailwind.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatterBox - Upload Avatar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'cb-dark': '#0f1117',
+              'cb-card': '#1a1d27',
+              'cb-input': '#242734',
+              'cb-border': '#2a2d3a',
+              'cb-accent': '#3b82f6',
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Inter', sans-serif; }
+    </style>
   </head>
-  <body>
-    <div class="container mx-auto p-4">
-      <div class="text-center">
-        <h1 class="text-3xl font-bold">画像アップロード</h1>
+  <body class="bg-cb-dark text-white min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-cb-card rounded-2xl p-8 shadow-2xl">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-cb-accent/20 flex items-center justify-center">
+          <svg class="w-8 h-8 text-cb-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold">Upload Avatar</h1>
+        <p class="text-gray-400 text-sm mt-2">Choose an image to use as your profile picture.</p>
       </div>
-      <form role="form" action="/uploader" enctype="multipart/form-data" method="post" class="mt-4">
-      <input type="hidden" name="userid" value="{{.UserData.userid}}" />
-      <div class="mb-4">
-        <label for="message" class="block font-medium">ファイルを選択</label>
-        <input type="file" name="avatarFile" class="border border-gray-300 rouded-md py-2 px-4 " />
-      </div>
-      <input type="submit" value="アップロード" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" />
+      <form role="form" action="/uploader" enctype="multipart/form-data" method="post">
+        <input type="hidden" name="userid" value="{{.UserData.userid}}" />
+        <div class="mb-6">
+          <label class="block text-sm font-medium mb-2">Select File</label>
+          <input type="file" name="avatarFile"
+                 class="w-full bg-cb-input border border-cb-border rounded-lg py-3 px-4 text-sm text-gray-300
+                        file:mr-4 file:py-1.5 file:px-4 file:rounded-md file:border-0
+                        file:text-sm file:font-medium file:bg-cb-accent file:text-white
+                        file:cursor-pointer hover:file:bg-blue-600" />
+        </div>
+        <input type="submit" value="Upload"
+               class="w-full bg-cb-accent hover:bg-blue-600 text-white font-semibold py-3 rounded-lg cursor-pointer transition-colors" />
       </form>
+      <a href="/" class="block text-center text-sm text-gray-500 hover:text-gray-300 mt-6">
+        &larr; Back to Chat
+      </a>
     </div>
   </body>
 </html>

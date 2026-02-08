@@ -1,74 +1,467 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>Chat</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.16/dist/tailwind.min.css" rel="stylesheet">
-    <style>
-      ul#messages { list-style: none; }
-      ul#messages li { padding: 5px 10px; }
-      ul#messages li { margin-bottom: 2px; }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <form id="chatbox" class="form-inline">
-        <div class="rounded-md p-4">
-          <div class="form-group">
-            <label for="message">{{.UserData.name}}からメッセージを送信</label>
-            または<a href="/logout" class="text-blue-500 hover:text-blue-800 underline">ログアウト</a>
-          </div>
-          <div class="flex items-center">
-            <textarea id="message" class="form-control flex-grow p-2 border border-gray-300 rounded-md" rows="3"></textarea>
-            <input type="submit" value="送信" class="btn btn-primary ml-2">
-          </div>
-        </div>
-      </form>
-      <div class="flex justify-between items-center py-4">
-        <div class="flex items-center">
-          <ul id="messages"></ul>
-        </div>
-      </div>
-    </div>
-    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js">
-    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatterBox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      $(function(){
-        let socket = null;
-        let msgBox = $("#chatbox textarea");
-        let messages = $("#messages");
-        $("#chatbox").submit(function(){
-          if (!msgBox.val()) return false;
-          if (!socket) {
-            alert("エラー: WebSocket接続が行われていません。 ");
-            return false;
-          }
-          socket.send(JSON.stringify({"Message": msgBox.val()}));
-          msgBox.val("");
-          return false;
-        });
-        if (!window["WebSocket"]) {
-          alert("エラー:WebSocketに対応していないブラウザです。")
-        } else {
-          socket = new WebSocket("ws://{{.Host}}/room");
-          socket.onclose = function() {
-            alert("接続が終了しました。");
-          }
-          socket.onmessage = function(e) {
-            const msg = JSON.parse(e.data);
-            messages.append(
-              $("<li>").append(
-                $("<img>").attr("title", msg.Name).css({
-                  width: 50,
-                  height: 50,
-                  verticalAlign: "middle",
-                  borderRadius: "50%",
-                }).attr("src", msg.AvatarURL),
-                $("<span>").text(msg.Message + " "),
-                $("<span>").text(new Date(msg.When).toLocaleString() + " ")
-              ));
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'cb-dark': '#1e1f22',
+              'cb-sidebar': '#2b2d31',
+              'cb-main': '#313338',
+              'cb-input': '#383a40',
+              'cb-border': '#3f4147',
+              'cb-accent': '#3b82f6',
+              'cb-hover': '#2e3035',
+            }
           }
         }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { font-family: 'Inter', sans-serif; }
+      #messages::-webkit-scrollbar { width: 6px; }
+      #messages::-webkit-scrollbar-track { background: transparent; }
+      #messages::-webkit-scrollbar-thumb { background: #1e1f22; border-radius: 3px; }
+      #messages::-webkit-scrollbar-thumb:hover { background: #5b5e66; }
+      .message-row:hover { background-color: rgba(255,255,255,0.02); }
+      #msg-input { field-sizing: content; }
+    </style>
+  </head>
+  <body class="bg-cb-dark text-gray-100 h-screen overflow-hidden">
+    <div class="flex h-screen">
+
+      <!-- LEFT SIDEBAR -->
+      <aside id="left-sidebar" class="w-64 bg-cb-sidebar flex flex-col border-r border-cb-border flex-shrink-0 hidden lg:flex">
+        <!-- Server Header -->
+        <div class="h-14 px-4 flex items-center border-b border-cb-border flex-shrink-0">
+          <div class="flex items-center gap-2">
+            <svg class="w-7 h-7 text-cb-accent" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/>
+              <path d="M7 9h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2z"/>
+            </svg>
+            <div>
+              <h1 class="text-sm font-bold leading-tight">Community Hub</h1>
+              <p class="text-xs text-gray-400 leading-tight">Public Forum</p>
+            </div>
+          </div>
+          <!-- Notification bell -->
+          <button class="ml-auto text-gray-400 hover:text-white">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="p-3 flex-shrink-0">
+          <div class="flex items-center bg-cb-dark rounded-md px-3 py-1.5">
+            <svg class="w-4 h-4 text-gray-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input type="text" placeholder="Find a board..."
+                   class="bg-transparent text-sm text-gray-400 w-full outline-none placeholder-gray-500"
+                   disabled>
+          </div>
+        </div>
+
+        <!-- Channel List -->
+        <div class="flex-1 overflow-y-auto px-2">
+          <h3 class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-2 mt-3 mb-1.5">
+            Public Boards
+          </h3>
+          <ul class="space-y-0.5">
+            <li>
+              <a href="#" class="flex items-center px-2 py-1.5 rounded bg-cb-border/50 text-white text-sm font-medium">
+                <span class="text-gray-400 mr-1.5 text-lg leading-none">#</span>
+                General
+                <span class="ml-auto w-2 h-2 rounded-full bg-cb-accent"></span>
+              </a>
+            </li>
+            <li>
+              <span class="flex items-center px-2 py-1.5 rounded text-gray-400 text-sm cursor-not-allowed hover:bg-cb-hover/50">
+                <span class="mr-1.5 text-lg leading-none">#</span> Gaming
+              </span>
+            </li>
+            <li>
+              <span class="flex items-center px-2 py-1.5 rounded text-gray-400 text-sm cursor-not-allowed hover:bg-cb-hover/50">
+                <span class="mr-1.5 text-lg leading-none">#</span> Product Design
+              </span>
+            </li>
+            <li>
+              <span class="flex items-center px-2 py-1.5 rounded text-gray-400 text-sm cursor-not-allowed hover:bg-cb-hover/50">
+                <span class="mr-1.5 text-lg leading-none">#</span> Tech News
+              </span>
+            </li>
+            <li>
+              <span class="flex items-center px-2 py-1.5 rounded text-gray-400 text-sm cursor-not-allowed hover:bg-cb-hover/50">
+                <span class="mr-1.5 text-lg leading-none">#</span> Development
+              </span>
+            </li>
+          </ul>
+
+          <h3 class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-2 mt-5 mb-1.5">
+            Resources
+          </h3>
+          <ul class="space-y-0.5">
+            <li>
+              <span class="flex items-center px-2 py-1.5 rounded text-gray-400 text-sm cursor-not-allowed hover:bg-cb-hover/50">
+                <svg class="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
+                Documentation
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Bottom Actions -->
+        <div class="p-3 space-y-2 border-t border-cb-border flex-shrink-0">
+          <button disabled class="w-full py-2 bg-cb-accent/80 rounded-md text-sm font-medium flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            </svg>
+            Create Room
+          </button>
+          <button disabled class="w-full py-2 bg-cb-dark rounded-md text-sm text-gray-400 flex items-center justify-center gap-1.5 cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+            </svg>
+            Explore Boards
+          </button>
+        </div>
+      </aside>
+
+      <!-- CENTER: Main Chat Area -->
+      <main class="flex-1 flex flex-col min-w-0 bg-cb-main">
+        <!-- Channel Header -->
+        <header class="h-14 bg-cb-main border-b border-cb-border flex items-center px-4 flex-shrink-0">
+          <!-- Mobile hamburger -->
+          <button id="sidebar-toggle" class="lg:hidden mr-3 text-gray-400 hover:text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <span class="text-gray-400 mr-1.5 text-xl">#</span>
+          <h2 class="font-semibold text-white">General</h2>
+          <div class="hidden sm:block ml-3 pl-3 border-l border-cb-border">
+            <span class="text-sm text-gray-400">A place for everyone to talk about anything.</span>
+          </div>
+          <div class="ml-auto flex items-center gap-3">
+            <!-- Member avatars (decorative) -->
+            <div class="hidden md:flex -space-x-2">
+              <img src="{{.UserData.avatar_url}}" class="w-6 h-6 rounded-full border-2 border-cb-main">
+            </div>
+            <!-- Search icon -->
+            <button class="text-gray-400 hover:text-white">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </button>
+            <!-- Members toggle -->
+            <button id="members-toggle" class="text-gray-400 hover:text-white xl:hidden">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Messages Area -->
+        <div id="messages" class="flex-1 overflow-y-auto px-4 py-4">
+          <!-- Welcome message -->
+          <div class="text-center py-12 mb-4">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-cb-accent/20 flex items-center justify-center">
+              <span class="text-3xl text-cb-accent">#</span>
+            </div>
+            <h3 class="text-2xl font-bold mb-1">Welcome to #General</h3>
+            <p class="text-gray-400 text-sm">This is the beginning of the #General channel. Say hello!</p>
+          </div>
+          <!-- Messages appended here by JavaScript -->
+        </div>
+
+        <!-- Message Input Area -->
+        <div class="px-4 pb-4 flex-shrink-0">
+          <form id="chatbox" class="bg-cb-input rounded-lg flex items-end">
+            <!-- Attachment button (decorative) -->
+            <button type="button" class="p-3 text-gray-400 hover:text-gray-300 flex-shrink-0" disabled>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+            </button>
+
+            <textarea id="msg-input" rows="1"
+              placeholder="Message #general"
+              class="flex-1 bg-transparent text-gray-100 resize-none outline-none py-3 text-sm max-h-32 overflow-y-auto leading-relaxed"></textarea>
+
+            <!-- Emoji button (decorative) -->
+            <button type="button" class="p-3 text-gray-400 hover:text-gray-300 flex-shrink-0" disabled>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </button>
+
+            <!-- @ mention (decorative) -->
+            <button type="button" class="p-3 text-gray-400 hover:text-gray-300 flex-shrink-0" disabled>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"/>
+              </svg>
+            </button>
+
+            <!-- Send button -->
+            <button type="submit" id="send-btn" class="p-3 text-cb-accent hover:text-blue-400 flex-shrink-0">
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </main>
+
+      <!-- RIGHT SIDEBAR: Members List -->
+      <aside id="right-sidebar" class="w-60 bg-cb-sidebar border-l border-cb-border flex-col flex-shrink-0 hidden xl:flex">
+        <div class="h-14 px-4 flex items-center border-b border-cb-border flex-shrink-0">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Board Members &mdash; <span id="member-count">1</span></h3>
+        </div>
+        <div id="members-list" class="flex-1 overflow-y-auto p-3">
+          <h4 class="text-[11px] font-semibold text-green-400 uppercase tracking-wider mb-2 px-1">
+            Online
+          </h4>
+          <!-- Current user (always shown) -->
+          <div class="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-cb-hover">
+            <div class="relative flex-shrink-0">
+              <img src="{{.UserData.avatar_url}}" class="w-8 h-8 rounded-full" alt="{{.UserData.name}}">
+              <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-cb-sidebar"></div>
+            </div>
+            <span class="text-sm truncate">{{.UserData.name}}</span>
+          </div>
+          <!-- Other users appended dynamically -->
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- Mobile sidebar overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden"></div>
+
+    <script>
+    (function() {
+      'use strict';
+
+      // === DOM References ===
+      const chatForm = document.getElementById('chatbox');
+      const msgInput = document.getElementById('msg-input');
+      const messagesContainer = document.getElementById('messages');
+      const membersList = document.getElementById('members-list');
+      const memberCount = document.getElementById('member-count');
+      const sidebarToggle = document.getElementById('sidebar-toggle');
+      const leftSidebar = document.getElementById('left-sidebar');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+      // === Mobile Sidebar Toggle ===
+      if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function() {
+          leftSidebar.classList.toggle('hidden');
+          leftSidebar.classList.toggle('fixed');
+          leftSidebar.classList.toggle('inset-y-0');
+          leftSidebar.classList.toggle('left-0');
+          leftSidebar.classList.toggle('z-50');
+          sidebarOverlay.classList.toggle('hidden');
+        });
+        sidebarOverlay.addEventListener('click', function() {
+          leftSidebar.classList.add('hidden');
+          leftSidebar.classList.remove('fixed', 'inset-y-0', 'left-0', 'z-50');
+          sidebarOverlay.classList.add('hidden');
+        });
+      }
+
+      // === Textarea Auto-resize ===
+      msgInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 128) + 'px';
       });
+
+      // === Enter to Send (Shift+Enter for newline) ===
+      msgInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
+        }
+      });
+
+      // === WebSocket Connection ===
+      let socket = null;
+      const currentUserName = '{{.UserData.name}}';
+
+      if (!window.WebSocket) {
+        showNotice('Your browser does not support WebSocket.', 'red');
+      } else {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        socket = new WebSocket(protocol + '//' + '{{.Host}}' + '/room');
+
+        socket.onopen = function() {
+          showNotice('Connected to chat.', 'green');
+        };
+
+        socket.onclose = function() {
+          showNotice('Connection closed. Please refresh to reconnect.', 'red');
+        };
+
+        socket.onerror = function() {
+          showNotice('Connection error occurred.', 'red');
+        };
+
+        socket.onmessage = function(e) {
+          const msg = JSON.parse(e.data);
+          appendMessage(msg);
+        };
+      }
+
+      // === Form Submit ===
+      chatForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const text = msgInput.value.trim();
+        if (!text) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          showNotice('WebSocket connection is not open.', 'red');
+          return;
+        }
+        socket.send(JSON.stringify({ "Message": text }));
+        msgInput.value = '';
+        msgInput.style.height = 'auto';
+      });
+
+      // === Message Rendering ===
+      const seenUsers = new Map();
+
+      function appendMessage(msg) {
+        // Track user
+        seenUsers.set(msg.Name, { avatarURL: msg.AvatarURL, lastSeen: new Date(msg.When) });
+        updateMembersList();
+
+        // Check scroll position before appending
+        const isNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 100;
+
+        // Build message row
+        const row = document.createElement('div');
+        row.className = 'message-row flex items-start gap-3 px-2 py-1.5 rounded -mx-2';
+
+        // Avatar
+        const avatar = document.createElement('img');
+        avatar.src = msg.AvatarURL;
+        avatar.alt = msg.Name;
+        avatar.className = 'w-10 h-10 rounded-full mt-0.5 flex-shrink-0';
+
+        // Content
+        const content = document.createElement('div');
+        content.className = 'flex-1 min-w-0';
+
+        // Name + Timestamp
+        const meta = document.createElement('div');
+        meta.className = 'flex items-baseline gap-2 mb-0.5';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'font-semibold text-sm text-white hover:underline cursor-pointer';
+        nameSpan.textContent = msg.Name;
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'text-xs text-gray-500';
+        timeSpan.textContent = formatTime(new Date(msg.When));
+        meta.appendChild(nameSpan);
+        meta.appendChild(timeSpan);
+
+        // Message text
+        const text = document.createElement('p');
+        text.className = 'text-sm text-gray-300 break-words leading-relaxed';
+        text.textContent = msg.Message;
+
+        content.appendChild(meta);
+        content.appendChild(text);
+
+        row.appendChild(avatar);
+        row.appendChild(content);
+
+        messagesContainer.appendChild(row);
+
+        // Auto-scroll if near bottom
+        if (isNearBottom) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+      }
+
+      function formatTime(date) {
+        const now = new Date();
+        const hours = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (date.toDateString() === now.toDateString()) {
+          return hours;
+        }
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (date.toDateString() === yesterday.toDateString()) {
+          return 'Yesterday ' + hours;
+        }
+        return date.toLocaleDateString() + ' ' + hours;
+      }
+
+      function showNotice(text, color) {
+        const notice = document.createElement('div');
+        const colorClass = color === 'green' ? 'text-green-400' : 'text-red-400';
+        notice.className = 'text-center text-xs py-2 ' + colorClass;
+        notice.textContent = text;
+        messagesContainer.appendChild(notice);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+
+      // === Members List ===
+      function updateMembersList() {
+        if (!membersList) return;
+
+        // Remove dynamic entries
+        const dynamicEntries = membersList.querySelectorAll('.dynamic-member');
+        dynamicEntries.forEach(function(el) { el.remove(); });
+
+        let count = 1; // current user always counted
+        seenUsers.forEach(function(data, name) {
+          if (name === currentUserName) return;
+          count++;
+
+          const memberDiv = document.createElement('div');
+          memberDiv.className = 'dynamic-member flex items-center gap-3 py-1.5 px-2 rounded hover:bg-cb-hover';
+
+          const avatarWrapper = document.createElement('div');
+          avatarWrapper.className = 'relative flex-shrink-0';
+          const img = document.createElement('img');
+          img.src = data.avatarURL;
+          img.className = 'w-8 h-8 rounded-full';
+          img.alt = name;
+          const indicator = document.createElement('div');
+          indicator.className = 'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-cb-sidebar';
+          avatarWrapper.appendChild(img);
+          avatarWrapper.appendChild(indicator);
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'text-sm truncate';
+          nameSpan.textContent = name;
+
+          memberDiv.appendChild(avatarWrapper);
+          memberDiv.appendChild(nameSpan);
+          membersList.appendChild(memberDiv);
+        });
+
+        if (memberCount) {
+          memberCount.textContent = count;
+        }
+      }
+
+      // === Focus message input on page load ===
+      msgInput.focus();
+
+    })();
     </script>
   </body>
 </html>
