@@ -4,10 +4,14 @@ import (
 	"flag"
 	"html/template"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
+	"github.com/dchf12/chat/infra/memory"
 	"github.com/dchf12/chat/trace"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/stretchr/objx"
@@ -40,6 +44,25 @@ func main() {
 	r.tracer = trace.New(os.Stdout)
 	go r.run()
 
+	// WebAuthn 初期化
+	wconfig := &webauthn.Config{
+		RPID:          "localhost",
+		RPDisplayName: "ChatterBox",
+		RPOrigins:     []string{"http://localhost:8080"},
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			RequireResidentKey: protocol.ResidentKeyRequired(),
+			UserVerification:   protocol.VerificationPreferred,
+		},
+	}
+	wa, err := webauthn.New(wconfig)
+	if err != nil {
+		log.Fatalf("failed to initialize WebAuthn: %v", err)
+	}
+
+	userRepo := memory.NewUserStore()
+	sessionRepo := memory.NewSessionStore()
+	passkeyHandler := NewPasskeyHandler(wa, userRepo, sessionRepo)
+
 	authGroup := e.Group("")
 	authGroup.Use(AuthMiddleware())
 	authGroup.GET("/", renderTemplate("chat.html"))
@@ -49,6 +72,12 @@ func main() {
 	e.GET("/logout", logoutHandler)
 	e.POST("/uploader", uploaderHandler)
 	e.GET("/upload", renderTemplate("upload.html"))
+
+	// Passkey routes
+	e.POST("/passkey/register", passkeyHandler.BeginRegistration)
+	e.POST("/passkey/register/finish", passkeyHandler.FinishRegistration)
+	e.POST("/passkey/login", passkeyHandler.BeginLogin)
+	e.POST("/passkey/login/finish", passkeyHandler.FinishLogin)
 
 	e.Static("/avatars", "avatars")
 	e.GET("/room", r.WebSocketHandler)

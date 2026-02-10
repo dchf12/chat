@@ -123,8 +123,41 @@
           </button>
         </div>
 
+        <!-- Passkey Divider -->
+        <div class="flex items-center gap-4 mb-6">
+          <div class="flex-1 h-px bg-cb-border"></div>
+          <span class="text-sm text-gray-500">Or use Passkey</span>
+          <div class="flex-1 h-px bg-cb-border"></div>
+        </div>
+
+        <!-- Passkey Login Button -->
+        <button id="passkey-login-btn" type="button"
+                class="w-full bg-cb-accent hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 mb-4">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 11c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zm0 0c0-1.1.9-2 2-2s2 .9 2 2m-6 7c0-2.21 1.79-4 4-4s4 1.79 4 4M7 3h10a4 4 0 014 4v10a4 4 0 01-4 4H7a4 4 0 01-4-4V7a4 4 0 014-4z"/>
+          </svg>
+          Login with Passkey
+        </button>
+
+        <!-- Passkey Registration (Collapsible) -->
+        <details class="mb-4">
+          <summary class="text-sm text-gray-400 cursor-pointer hover:text-white">Register a new Passkey</summary>
+          <div class="mt-3 space-y-3">
+            <input id="passkey-username" type="text" placeholder="Choose a username"
+                   class="w-full bg-cb-input border border-cb-border rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-cb-accent">
+            <button id="passkey-register-btn" type="button"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors">
+              Register Passkey
+            </button>
+          </div>
+        </details>
+
+        <!-- Passkey Status -->
+        <div id="passkey-status" class="text-center text-sm hidden"></div>
+
         <!-- Footer -->
-        <p class="text-center text-sm text-gray-500">
+        <p class="text-center text-sm text-gray-500 mt-4">
           Don't have an account?
           <a href="/auth/login/google" class="text-cb-accent hover:text-blue-400">Sign up now</a>
         </p>
@@ -174,5 +207,158 @@
       </div>
 
     </div>
+
+    <script>
+      (function() {
+        'use strict';
+
+        // --- Helpers ---
+
+        function base64URLToBuffer(base64url) {
+          var padding = '='.repeat((4 - base64url.length % 4) % 4);
+          var base64 = base64url.replace(/-/g, '+').replace(/_/g, '/') + padding;
+          var binary = atob(base64);
+          var bytes = new Uint8Array(binary.length);
+          for (var i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          return bytes.buffer;
+        }
+
+        function bufferToBase64URL(buffer) {
+          var bytes = new Uint8Array(buffer);
+          var binary = '';
+          for (var i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        function showStatus(msg, isError) {
+          var el = document.getElementById('passkey-status');
+          el.textContent = msg;
+          el.className = 'text-center text-sm mt-4 ' + (isError ? 'text-red-400' : 'text-green-400');
+          el.classList.remove('hidden');
+        }
+
+        // --- Registration Flow ---
+
+        document.getElementById('passkey-register-btn').addEventListener('click', async function() {
+          var username = document.getElementById('passkey-username').value.trim();
+          if (!username) {
+            showStatus('Please enter a username.', true);
+            return;
+          }
+
+          try {
+            var beginResp = await fetch('/passkey/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: username, display_name: username })
+            });
+            if (!beginResp.ok) {
+              var errBody = await beginResp.json().catch(function() { return {}; });
+              throw new Error(errBody.error || 'Registration failed');
+            }
+            var options = await beginResp.json();
+
+            // Convert base64url fields to ArrayBuffer
+            options.publicKey.challenge = base64URLToBuffer(options.publicKey.challenge);
+            options.publicKey.user.id = base64URLToBuffer(options.publicKey.user.id);
+            if (options.publicKey.excludeCredentials) {
+              options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(function(cred) {
+                cred.id = base64URLToBuffer(cred.id);
+                return cred;
+              });
+            }
+
+            var credential = await navigator.credentials.create({ publicKey: options.publicKey });
+
+            var finishResp = await fetch('/passkey/register/finish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: credential.id,
+                rawId: bufferToBase64URL(credential.rawId),
+                type: credential.type,
+                response: {
+                  attestationObject: bufferToBase64URL(credential.response.attestationObject),
+                  clientDataJSON: bufferToBase64URL(credential.response.clientDataJSON)
+                }
+              })
+            });
+            if (!finishResp.ok) {
+              var errFinish = await finishResp.json().catch(function() { return {}; });
+              throw new Error(errFinish.error || 'Registration finish failed');
+            }
+
+            showStatus('Passkey registered!', false);
+            setTimeout(function() { window.location.href = '/'; }, 1000);
+          } catch (err) {
+            if (err.name === 'NotAllowedError') {
+              showStatus('Registration was cancelled or failed.', true);
+            } else {
+              showStatus(err.message || 'Registration failed.', true);
+            }
+          }
+        });
+
+        // --- Login Flow ---
+
+        document.getElementById('passkey-login-btn').addEventListener('click', async function() {
+          try {
+            var beginResp = await fetch('/passkey/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            if (!beginResp.ok) {
+              var errBody = await beginResp.json().catch(function() { return {}; });
+              throw new Error(errBody.error || 'Login failed');
+            }
+            var options = await beginResp.json();
+
+            // Convert base64url fields to ArrayBuffer
+            options.publicKey.challenge = base64URLToBuffer(options.publicKey.challenge);
+            if (options.publicKey.allowCredentials) {
+              options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(function(cred) {
+                cred.id = base64URLToBuffer(cred.id);
+                return cred;
+              });
+            }
+
+            var assertion = await navigator.credentials.get({ publicKey: options.publicKey });
+
+            var finishResp = await fetch('/passkey/login/finish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: assertion.id,
+                rawId: bufferToBase64URL(assertion.rawId),
+                type: assertion.type,
+                response: {
+                  authenticatorData: bufferToBase64URL(assertion.response.authenticatorData),
+                  clientDataJSON: bufferToBase64URL(assertion.response.clientDataJSON),
+                  signature: bufferToBase64URL(assertion.response.signature),
+                  userHandle: assertion.response.userHandle ? bufferToBase64URL(assertion.response.userHandle) : ''
+                }
+              })
+            });
+            if (!finishResp.ok) {
+              var errFinish = await finishResp.json().catch(function() { return {}; });
+              throw new Error(errFinish.error || 'Login finish failed');
+            }
+
+            showStatus('Login successful!', false);
+            setTimeout(function() { window.location.href = '/'; }, 1000);
+          } catch (err) {
+            if (err.name === 'NotAllowedError') {
+              showStatus('Login was cancelled or failed.', true);
+            } else {
+              showStatus(err.message || 'Login failed.', true);
+            }
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

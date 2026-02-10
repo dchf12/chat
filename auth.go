@@ -24,11 +24,12 @@ var (
 )
 
 func init() {
-	var err error
-	credentials, err = loadCredentials()
+	creds, err := loadCredentials()
 	if err != nil {
-		log.Fatalf("Failed to load credentials: %v", err)
+		log.Printf("OAuth credentials not loaded (passkey-only mode): %v", err)
+		return
 	}
+	credentials = creds
 	googleConf = &oauth2.Config{
 		ClientID:     credentials.Web.ClientID,
 		ClientSecret: credentials.Web.ClientSecret,
@@ -72,6 +73,9 @@ func handleLogin(c echo.Context) error {
 	if provider != "google" {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Unsupported provider: %s", provider))
 	}
+	if googleConf == nil {
+		return c.String(http.StatusServiceUnavailable, "OAuth is not configured")
+	}
 	loginURL := googleConf.AuthCodeURL("state", oauth2.AccessTypeOffline)
 	return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 }
@@ -80,6 +84,9 @@ func handleCallback(c echo.Context) error {
 	provider := c.Param("provider")
 	if provider != "google" {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Unsupported provider: %s", provider))
+	}
+	if googleConf == nil {
+		return c.String(http.StatusServiceUnavailable, "OAuth is not configured")
 	}
 	code := c.QueryParam("code")
 	ctx := context.Background()
