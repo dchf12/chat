@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/dchf12/chat/domain"
 	"github.com/go-webauthn/webauthn/protocol"
@@ -20,6 +21,7 @@ type PasskeyHandler struct {
 	webAuthn    *webauthn.WebAuthn
 	userRepo    domain.UserRepository
 	sessionRepo domain.SessionRepository
+	pending     sync.Map // map[challenge]domain.User
 }
 
 // NewPasskeyHandler は PasskeyHandler を生成する。
@@ -78,10 +80,7 @@ func (h *PasskeyHandler) BeginRegistration(c echo.Context) error {
 	if err := h.sessionRepo.Save(ctx, session.Challenge, *session); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save session"})
 	}
-
-	if err := h.userRepo.Create(ctx, user); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save user"})
-	}
+	h.pending.Store(session.Challenge, user)
 
 	c.SetCookie(&http.Cookie{
 		Name:     "webauthn_session",
@@ -90,6 +89,7 @@ func (h *PasskeyHandler) BeginRegistration(c echo.Context) error {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Path:     "/",
+		Secure:   c.IsTLS(),
 	})
 
 	return c.JSON(http.StatusOK, options)
@@ -108,14 +108,22 @@ func (h *PasskeyHandler) FinishRegistration(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session not found"})
 	}
 
-	user, err := h.userRepo.GetByWebAuthnID(ctx, session.UserID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "user not found"})
+	pendingUser, ok := h.pending.LoadAndDelete(cookie.Value)
+	if !ok {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "registration context not found"})
+	}
+	user, ok := pendingUser.(domain.User)
+	if !ok {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid registration context"})
 	}
 
 	credential, err := h.webAuthn.FinishRegistration(user, session, c.Request())
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("failed to finish registration: %v", err)})
+	}
+
+	if err := h.userRepo.Create(ctx, user); err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "username already exists"})
 	}
 
 	if err := h.userRepo.AddCredential(ctx, user.ID, *credential); err != nil {
@@ -147,6 +155,7 @@ func (h *PasskeyHandler) BeginLogin(c echo.Context) error {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Path:     "/",
+		Secure:   c.IsTLS(),
 	})
 
 	return c.JSON(http.StatusOK, options)
@@ -214,10 +223,13 @@ func setAuthCookie(c echo.Context, user domain.User) {
 
 func deleteCookie(c echo.Context, name string) {
 	c.SetCookie(&http.Cookie{
-		Name:   name,
-		Value:  "",
-		MaxAge: -1,
-		Path:   "/",
+		Name:     name,
+		Value:    "",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   c.IsTLS(),
 	})
 }
 

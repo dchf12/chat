@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/dchf12/chat/trace"
 	"github.com/gorilla/websocket"
@@ -12,7 +14,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return isAllowedWebSocketOrigin(r)
 	},
 }
 
@@ -33,6 +35,7 @@ func newRoom(avatar Avatar) *room {
 		leave:   make(chan *client),
 		clients: make(map[*client]struct{}),
 		avatar:  avatar,
+		done:    make(chan struct{}),
 	}
 }
 
@@ -92,4 +95,25 @@ func (r *room) WebSocketHandler(c echo.Context) error {
 	client.read()
 
 	return nil
+}
+
+func isAllowedWebSocketOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+
+	if !strings.EqualFold(u.Host, r.Host) {
+		return false
+	}
+
+	if r.TLS != nil {
+		return strings.EqualFold(u.Scheme, "https")
+	}
+	return strings.EqualFold(u.Scheme, "http")
 }

@@ -1,18 +1,34 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
 
+const maxAvatarUploadBytes int64 = 5 << 20 // 5 MiB
+
 func uploaderHandler(c echo.Context) error {
+	req := c.Request()
+	req.Body = http.MaxBytesReader(c.Response(), req.Body, maxAvatarUploadBytes)
+
 	file, err := c.FormFile("avatarFile")
 	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			return c.String(http.StatusBadRequest, err.Error())
+		}
+		if strings.Contains(err.Error(), "request body too large") {
+			return c.String(http.StatusRequestEntityTooLarge, "file is too large")
+		}
 		return c.String(http.StatusBadRequest, err.Error())
+	}
+	if file.Size > maxAvatarUploadBytes {
+		return c.String(http.StatusRequestEntityTooLarge, "file is too large")
 	}
 
 	src, err := file.Open()

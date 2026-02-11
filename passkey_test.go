@@ -260,6 +260,34 @@ func TestBeginRegistration_DuplicateUsername(t *testing.T) {
 	}
 }
 
+func TestBeginRegistration_DoesNotPersistUserBeforeFinish(t *testing.T) {
+	e := echo.New()
+	body := `{"username":"newuser","display_name":"New User"}`
+	req := httptest.NewRequest(http.MethodPost, "/passkey/register", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	wa, _ := webauthn.New(&webauthn.Config{
+		RPDisplayName: "Test",
+		RPID:          "localhost",
+		RPOrigins:     []string{"http://localhost:8080"},
+	})
+
+	userRepo := newMockUserRepo()
+	h := NewPasskeyHandler(wa, userRepo, newMockSessionRepo())
+	err := h.BeginRegistration(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if len(userRepo.users) != 0 {
+		t.Fatalf("expected no persisted users before finish, got %d", len(userRepo.users))
+	}
+}
+
 func TestGenerateUUID(t *testing.T) {
 	uuid := generateUUID()
 	pattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
