@@ -13,7 +13,6 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/labstack/echo/v4"
-	"github.com/stretchr/objx"
 )
 
 // PasskeyHandler は WebAuthn パスキー認証のハンドラー。
@@ -205,17 +204,11 @@ func setAuthCookie(c echo.Context, user domain.User) {
 		avatarURL = fmt.Sprintf("https://www.gravatar.com/avatar/%s?d=mp", userID)
 	}
 
-	authCookieValue := objx.New(map[string]any{
+	setAuthCookieValue(c, map[string]any{
 		"userid":     userID,
 		"name":       user.DisplayName,
 		"avatar_url": avatarURL,
 		"email":      user.Email,
-	}).MustBase64()
-
-	c.SetCookie(&http.Cookie{
-		Name:  "auth",
-		Value: authCookieValue,
-		Path:  "/",
 	})
 }
 

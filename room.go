@@ -6,7 +6,6 @@ import (
 	"github.com/dchf12/chat/trace"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
-	"github.com/stretchr/objx"
 )
 
 var upgrader = websocket.Upgrader{
@@ -75,7 +74,7 @@ func (r *room) WebSocketHandler(c echo.Context) error {
 		return err
 	}
 
-	authCookie, err := c.Cookie("auth")
+	userData, err := getAuthUserData(c)
 	if err != nil {
 		_ = ws.Close()
 		return c.String(http.StatusForbidden, "Cookieの取得に失敗しました")
@@ -85,7 +84,7 @@ func (r *room) WebSocketHandler(c echo.Context) error {
 		socket:   ws,
 		send:     make(chan *message, 256),
 		room:     r,
-		userData: objx.MustFromBase64(authCookie.Value),
+		userData: userData,
 	}
 	r.join <- client
 	defer func() { r.leave <- client }()

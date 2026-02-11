@@ -12,7 +12,6 @@ import (
 	"github.com/dchf12/chat/domain"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/labstack/echo/v4"
-	"github.com/stretchr/objx"
 )
 
 // --- Mock Repositories ---
@@ -140,18 +139,21 @@ func TestSetAuthCookie_WithEmail(t *testing.T) {
 		t.Fatal("auth cookie not found")
 	}
 
-	decoded := objx.MustFromBase64(authCookie.Value)
-	if decoded.Get("name").Str() != "Test User" {
-		t.Errorf("expected name 'Test User', got %q", decoded.Get("name").Str())
+	decoded, err := parseAuthCookieValue(authCookie.Value)
+	if err != nil {
+		t.Fatalf("failed to parse auth cookie: %v", err)
 	}
-	if decoded.Get("email").Str() != "test@example.com" {
-		t.Errorf("expected email 'test@example.com', got %q", decoded.Get("email").Str())
+	if decoded["name"] != "Test User" {
+		t.Errorf("expected name 'Test User', got %v", decoded["name"])
 	}
-	if decoded.Get("avatar_url").Str() != "https://example.com/avatar.png" {
-		t.Errorf("expected avatar_url 'https://example.com/avatar.png', got %q", decoded.Get("avatar_url").Str())
+	if decoded["email"] != "test@example.com" {
+		t.Errorf("expected email 'test@example.com', got %v", decoded["email"])
+	}
+	if decoded["avatar_url"] != "https://example.com/avatar.png" {
+		t.Errorf("expected avatar_url 'https://example.com/avatar.png', got %v", decoded["avatar_url"])
 	}
 	// md5 of "test@example.com"
-	if decoded.Get("userid").Str() == "" {
+	if decoded["userid"] == "" {
 		t.Error("expected userid to be set")
 	}
 }
@@ -188,16 +190,19 @@ func TestSetAuthCookie_WithoutEmail(t *testing.T) {
 		t.Fatal("auth cookie not found")
 	}
 
-	decoded := objx.MustFromBase64(authCookie.Value)
+	decoded, err := parseAuthCookieValue(authCookie.Value)
+	if err != nil {
+		t.Fatalf("failed to parse auth cookie: %v", err)
+	}
 
 	expectedUserID := hex.EncodeToString(webAuthnID[:16])
-	if decoded.Get("userid").Str() != expectedUserID {
-		t.Errorf("expected userid %q, got %q", expectedUserID, decoded.Get("userid").Str())
+	if decoded["userid"] != expectedUserID {
+		t.Errorf("expected userid %q, got %v", expectedUserID, decoded["userid"])
 	}
 
 	expectedAvatar := "https://www.gravatar.com/avatar/" + expectedUserID + "?d=mp"
-	if decoded.Get("avatar_url").Str() != expectedAvatar {
-		t.Errorf("expected avatar_url %q, got %q", expectedAvatar, decoded.Get("avatar_url").Str())
+	if decoded["avatar_url"] != expectedAvatar {
+		t.Errorf("expected avatar_url %q, got %v", expectedAvatar, decoded["avatar_url"])
 	}
 }
 

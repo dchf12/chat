@@ -14,7 +14,6 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/stretchr/objx"
 )
 
 type TemplateRenderer struct {
@@ -66,12 +65,12 @@ func main() {
 	authGroup := e.Group("")
 	authGroup.Use(AuthMiddleware())
 	authGroup.GET("/", renderTemplate("chat.html"))
+	authGroup.POST("/uploader", uploaderHandler)
+	authGroup.GET("/upload", renderTemplate("upload.html"))
 
 	e.GET("/login", renderTemplate("login.html"))
 	e.GET("/auth/:action/:provider", loginHandler)
 	e.GET("/logout", logoutHandler)
-	e.POST("/uploader", uploaderHandler)
-	e.GET("/upload", renderTemplate("upload.html"))
 
 	// Passkey routes
 	e.POST("/passkey/register", passkeyHandler.BeginRegistration)
@@ -91,19 +90,14 @@ func renderTemplate(templateName string) echo.HandlerFunc {
 		data := map[string]any{
 			"Host": c.Request().Host,
 		}
-		if cookie, err := c.Cookie("auth"); err == nil {
-			data["UserData"] = objx.MustFromBase64(cookie.Value)
+		if userData, err := getAuthUserData(c); err == nil {
+			data["UserData"] = userData
 		}
 		return c.Render(http.StatusOK, templateName, data)
 	}
 }
 
 func logoutHandler(c echo.Context) error {
-	c.SetCookie(&http.Cookie{
-		Name:   "auth",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
-	})
+	clearAuthCookie(c)
 	return c.Redirect(http.StatusTemporaryRedirect, "/")
 }

@@ -2,14 +2,20 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/objx"
@@ -21,6 +27,8 @@ import (
 var (
 	credentials Credentials
 	googleConf  *oauth2.Config
+	authSecret  []byte
+	authOnce    sync.Once
 )
 
 func init() {
@@ -48,10 +56,12 @@ func init() {
 func AuthMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			cookie, err := c.Cookie("auth")
-			if err != nil || cookie.Value == "" {
+			userData, err := getAuthUserData(c)
+			if err != nil {
+				clearAuthCookie(c)
 				return c.Redirect(http.StatusTemporaryRedirect, "/login")
 			}
+			c.Set("userData", userData)
 			return next(c)
 		}
 	}
@@ -106,18 +116,104 @@ func handleCallback(c echo.Context) error {
 	m := md5.New()
 	_, _ = io.WriteString(m, strings.ToLower(userInfo.Email))
 	userID := fmt.Sprintf("%x", m.Sum(nil))
-	authCookieValue := objx.New(map[string]any{
+	setAuthCookieValue(c, map[string]any{
 		"userid":     userID,
 		"name":       userInfo.Name,
 		"avatar_url": userInfo.Picture,
 		"email":      userInfo.Email,
-	}).MustBase64()
-	c.SetCookie(&http.Cookie{
-		Name:  "auth",
-		Value: authCookieValue,
-		Path:  "/",
 	})
 	return c.Redirect(http.StatusTemporaryRedirect, "/")
+}
+
+func getAuthUserData(c echo.Context) (map[string]any, error) {
+	if v := c.Get("userData"); v != nil {
+		if userData, ok := v.(map[string]any); ok {
+			return userData, nil
+		}
+	}
+
+	cookie, err := c.Cookie("auth")
+	if err != nil || cookie.Value == "" {
+		return nil, errors.New("auth cookie not found")
+	}
+	return parseAuthCookieValue(cookie.Value)
+}
+
+func setAuthCookieValue(c echo.Context, userData map[string]any) {
+	c.SetCookie(&http.Cookie{
+		Name:     "auth",
+		Value:    makeAuthCookieValue(userData),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.IsTLS(),
+	})
+}
+
+func clearAuthCookie(c echo.Context) {
+	c.SetCookie(&http.Cookie{
+		Name:     "auth",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.IsTLS(),
+	})
+}
+
+func makeAuthCookieValue(userData map[string]any) string {
+	payload := objx.New(userData).MustBase64()
+	mac := hmac.New(sha256.New, getAuthSecret())
+	_, _ = mac.Write([]byte(payload))
+	return payload + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+func parseAuthCookieValue(raw string) (map[string]any, error) {
+	i := strings.LastIndex(raw, ".")
+	if i <= 0 || i == len(raw)-1 {
+		return nil, errors.New("invalid auth cookie format")
+	}
+
+	payload := raw[:i]
+	sigHex := raw[i+1:]
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return nil, errors.New("invalid auth cookie signature")
+	}
+
+	mac := hmac.New(sha256.New, getAuthSecret())
+	_, _ = mac.Write([]byte(payload))
+	if !hmac.Equal(sig, mac.Sum(nil)) {
+		return nil, errors.New("invalid auth cookie signature")
+	}
+
+	decoded, err := objx.FromBase64(payload)
+	if err != nil {
+		return nil, errors.New("invalid auth cookie payload")
+	}
+
+	return map[string]any(decoded), nil
+}
+
+func getAuthSecret() []byte {
+	authOnce.Do(func() {
+		if secret := os.Getenv("AUTH_SECRET"); secret != "" {
+			authSecret = []byte(secret)
+			return
+		}
+
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			// Fallback keeps app running; authentication still protected from trivial forgery.
+			authSecret = []byte("dev-only-fallback-auth-secret-change-me")
+			log.Printf("failed to generate random AUTH_SECRET, using fallback secret: %v", err)
+			return
+		}
+		authSecret = buf
+		log.Print("AUTH_SECRET is not set; using ephemeral in-memory secret")
+	})
+	return authSecret
 }
 
 type Credentials struct {

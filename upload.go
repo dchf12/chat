@@ -26,7 +26,17 @@ func uploaderHandler(c echo.Context) error {
 		return c.String(http.StatusInternalServerError, err.Error())
 	}
 
-	userID := filepath.Base(c.FormValue("userid"))
+	userData, err := getAuthUserData(c)
+	if err != nil {
+		return c.String(http.StatusUnauthorized, "unauthorized")
+	}
+
+	rawUserID, ok := userData["userid"].(string)
+	if !ok || rawUserID == "" {
+		return c.String(http.StatusUnauthorized, "invalid user")
+	}
+
+	userID := filepath.Base(rawUserID)
 	if userID == "" || userID == "." || userID == ".." {
 		return c.String(http.StatusBadRequest, "invalid userid")
 	}

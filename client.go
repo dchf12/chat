@@ -30,7 +30,7 @@ func (c *client) read() {
 			var err error
 			msg.AvatarURL, err = c.room.avatar.AvatarURL(c)
 			if err != nil {
-				log.Fatalln("AvatarURLの取得に失敗しました:", err)
+				log.Printf("failed to get avatar URL: %v", err)
 				continue
 			}
 			c.room.forward <- msg
