@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ var (
 	authSecret  []byte
 	authOnce    sync.Once
 )
+
+const oauthStateCookieName = "oauth_state"
 
 func init() {
 	creds, err := loadCredentials()
@@ -86,7 +89,20 @@ func handleLogin(c echo.Context) error {
 	if googleConf == nil {
 		return c.String(http.StatusServiceUnavailable, "OAuth is not configured")
 	}
-	loginURL := googleConf.AuthCodeURL("state", oauth2.AccessTypeOffline)
+	state, err := generateOAuthState()
+	if err != nil {
+		return c.String(http.StatusInternalServerError, "Failed to generate OAuth state")
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    state,
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.IsTLS(),
+	})
+	loginURL := googleConf.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 }
 
@@ -98,6 +114,25 @@ func handleCallback(c echo.Context) error {
 	if googleConf == nil {
 		return c.String(http.StatusServiceUnavailable, "OAuth is not configured")
 	}
+
+	stateCookie, err := c.Cookie(oauthStateCookieName)
+	if err != nil || stateCookie.Value == "" {
+		return c.String(http.StatusBadRequest, "missing oauth state cookie")
+	}
+	queryState := c.QueryParam("state")
+	if queryState == "" || !hmac.Equal([]byte(queryState), []byte(stateCookie.Value)) {
+		return c.String(http.StatusBadRequest, "invalid oauth state")
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.IsTLS(),
+	})
+
 	code := c.QueryParam("code")
 	ctx := context.Background()
 	token, err := googleConf.Exchange(ctx, code)
@@ -214,6 +249,14 @@ func getAuthSecret() []byte {
 		log.Print("AUTH_SECRET is not set; using ephemeral in-memory secret")
 	})
 	return authSecret
+}
+
+func generateOAuthState() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 type Credentials struct {
